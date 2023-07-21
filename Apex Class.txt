@@ -1,0 +1,58 @@
+public inherited sharing class ImageUploaderHandler {
+    @AuraEnabled 
+	public static ContentVersion saveFile(Id recordId, String strFileName, String base64Data) {
+    base64Data = EncodingUtil.urlDecode(base64Data, 'UTF-8');
+    String fileType = getFileType(strFileName);
+    if (!isValidImageFile(fileType)) { 
+        throw new AuraHandledException('Invalid file type!! Only image files are allowed (jpeg, png, jpg).');
+    }
+ 
+
+        ContentVersion cv = new ContentVersion();
+        cv.Title = strFileName;
+        cv.PathOnClient = '/' + strFileName;
+        cv.FirstPublishLocationId = recordId;
+        cv.VersionData = EncodingUtil.base64Decode(base64Data);
+        cv.IsMajorVersion = true;
+        cv.Description = 'UploadedByComponent'; 
+        insert cv;
+        return cv;
+    }
+
+    private static String getFileType(String fileName) {
+        Integer dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex >= 0 && dotIndex < fileName.length() - 1) {
+            return fileName.substring(dotIndex + 1).toLowerCase();
+        }
+        return '';
+    }
+
+    private static Boolean isValidImageFile(String fileType) {
+        return fileType == 'jpeg' || fileType == 'png' || fileType == 'jpg';
+    }
+
+    @AuraEnabled
+    public static String setImageUrl(Id recordId) {
+        List<ContentVersion> versions = [SELECT Id, ContentDocumentId, Title FROM ContentVersion WHERE Description = 'UploadedByComponent' AND FirstPublishLocationId = :recordId LIMIT 1];
+        if (!versions.isEmpty()) {
+            ContentVersion cv = versions[0];
+            ContentDistribution cdl = new ContentDistribution();
+            cdl.ContentVersionId = cv.Id;
+            cdl.Name = 'PublicShare';
+            insert cdl;
+            return [SELECT DistributionPublicUrl, ContentDownloadUrl FROM ContentDistribution WHERE Id = :cdl.Id LIMIT 1].ContentDownloadUrl;
+        } else {
+            return null;
+        }
+    }
+    @AuraEnabled
+    public static void deleteFiles(Id recordId) {
+        List<Id> lstConDocs = new List<Id>();
+        for (ContentDocumentLink cntLink : [SELECT Id, ContentDocumentId FROM ContentDocumentLink WHERE LinkedEntityId = :recordId]) {
+            lstConDocs.add(cntLink.ContentDocumentId);
+        }
+        if (!lstConDocs.isEmpty()) {
+            delete [SELECT Id FROM ContentDocument WHERE Id IN :lstConDocs];
+        }
+    }
+}

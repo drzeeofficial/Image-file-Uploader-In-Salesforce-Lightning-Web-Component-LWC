@@ -1,0 +1,193 @@
+import { LightningElement, track, api } from 'lwc';
+import saveFile from '@salesforce/apex/ImageUploaderHandler.saveFile';
+import setImageUrl from '@salesforce/apex/ImageUploaderHandler.setImageUrl';
+import deleteFiles from '@salesforce/apex/ImageUploaderHandler.deleteFiles';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+
+export default class UploadPicture extends LightningElement {
+  @api recordId;
+  @track data;
+  @track fileName = '';
+  @track showLoadingSpinner = false;
+  @track isTrue = false;
+  filesUploaded = [];
+  file;
+  fileContents;
+  fileReader;
+  content;
+  MAX_FILE_SIZE = 1500000;
+  @track showDiv1 = true;
+  @track showDiv2 = false;
+  @track imageUrl;
+  fileType;
+
+  connectedCallback() {
+    this.populateImageUrl();
+  }
+
+  handleFilesChange(event) {
+    this.fileName = '';
+    if (event.target.files.length > 0) {
+        const fileType = event.target.files[0].type;
+        const isImageFile = this.isImageFile(fileType);
+        if (isImageFile) {
+            this.isTrue = false;
+            this.filesUploaded = event.target.files;
+            this.fileName = event.target.files[0].name;
+            this.fileType = fileType;
+        } else {
+            this.isTrue = true; 
+            this.fileName = 'Invalid file type!! Only image files (jpeg, png, jpg) are allowed.';
+        }
+    } 
+}
+
+isImageFile(fileType) {
+  return /^image\/(jpeg|png|jpg)$/.test(fileType);
+}
+
+handleSave() {
+  if (this.filesUploaded.length > 0 && this.isImageFile(this.fileType)) { 
+      this.uploadHelper();
+  } else {
+      this.fileName = 'Invalid file type!! Only image files (jpeg, png, jpg) are allowed.';
+      this.isTrue = true;
+      this.filesUploaded = [];
+  }
+}
+
+handleReplace() {
+  if (this.filesUploaded.length > 0 && this.isImageFile(this.fileType)) { 
+      deleteFiles({ recordId: this.recordId })
+          .then(data => {
+              console.log(data);
+              this.uploadHelper();
+          })
+          .catch(error => {
+              this.dispatchEvent( 
+                  new ShowToastEvent({
+                      title: 'Error!!',
+                      message: error.message,
+                      variant: 'error',
+                  }),
+              );
+              this.fileName = '';
+              this.isTrue = false;
+              this.showLoadingSpinner = false;
+              this.filesUploaded = [];
+          });
+  } else {
+      this.fileName = 'Please select a valid image file (jpeg, png, jpg) to replace the existing one!!';
+  }
+}
+
+  uploadHelper() {
+    this.file = this.filesUploaded[0];
+    if (this.file.size > this.MAX_FILE_SIZE) {
+      this.dispatchEvent(
+        new ShowToastEvent({
+          title: 'Error',
+          message: 'File Size is too large',
+          variant: 'error',
+        }),
+      );
+      return;
+    }
+    this.isTrue = true;
+    this.showLoadingSpinner = true;
+    this.fileReader = new FileReader();
+    this.fileReader.onloadend = (() => {
+      this.fileContents = this.fileReader.result;
+      let base64 = 'base64,';
+      this.content = this.fileContents.indexOf(base64) + base64.length;
+      this.fileContents = this.fileContents.substring(this.content);
+      this.saveToFile();
+    });
+    this.fileReader.readAsDataURL(this.file);
+  }
+
+  saveToFile() {
+    saveFile({
+      recordId: this.recordId,
+      strFileName: this.file.name,
+      base64Data: encodeURIComponent(this.fileContents),
+      fileType: this.fileType,
+    })
+      .then(result => {
+        this.imageUrl = this.data;
+        this.fileName = this.fileName + ' - Uploaded Successfully';
+        this.isTrue = false;
+        this.showLoadingSpinner = false;
+        this.filesUploaded = [];
+        this.dispatchEvent(
+          new ShowToastEvent({
+            title: 'Success!!',
+            message: this.file.name + ' - Uploaded Successfully!!!',
+            variant: 'success',
+          }),
+        );
+        
+        this.populateImageUrl();
+      })
+      .catch(error => {
+        this.dispatchEvent(
+          new ShowToastEvent({
+            title: 'Error while uploading File',
+            message: error.message,
+            variant: 'error',
+          }),
+        );
+        this.fileName = '';
+        this.isTrue = false;
+        this.showLoadingSpinner = false;
+        this.filesUploaded = [];
+      });
+  }
+  populateImageUrl() {
+    setImageUrl({ recordId: this.recordId })
+      .then(data => {
+        this.data = data;
+        console.log(data);
+        if (data) {
+          this.imageUrl = data;
+          this.showDiv1 = false;
+          this.showDiv2 = true;
+        }
+      })
+      .catch(error => {
+        this.dispatchEvent(
+          new ShowToastEvent({
+            title: 'Error!!',
+            message: error.message,
+            variant: 'error',
+          }),
+        );
+      }); 
+  }
+
+  handleRemovePicture() {
+    if (this.data && !this.data.Is_From_Component__c) { 
+        deleteFiles({ recordId: this.recordId })
+            .then(data => {
+                console.log(data);
+                this.imageUrl = null;
+                this.showDiv1 = true;
+                this.showDiv2 = false;
+            })
+            .catch(error => {
+                this.dispatchEvent(
+                    new ShowToastEvent({
+                        title: 'Error!!',
+                        message: error.message,
+                        variant: 'error',
+                    }),
+                );
+            });
+    } else {
+        this.fileName = 'Cannot remove this picture as it was not uploaded through this component!';
+    }
+}
+
+}
+
+
