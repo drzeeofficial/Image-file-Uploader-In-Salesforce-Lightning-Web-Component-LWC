@@ -63,7 +63,7 @@
 
     <template if:true={showFooter}>
       <div style="text-align: center; padding: 10px;">
-       <b> Made by Salesforce Team @HawkLogix </b>
+       <b> Developed By: Salesforce Dragon - drzeeofficial@gmail.com </b>
       </div>
     </template>
 
